@@ -9,5 +9,5 @@
 <Overlay />
 <Navbar />
 <Hero />
-<Services lineColor="red"/>
+<!-- <Services lineColor="red"/> -->
 <Skills />

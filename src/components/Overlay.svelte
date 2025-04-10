@@ -1,6 +1,8 @@
 <script>
-    import { onMount, onDestroy } from 'svelte';
-
+    import { onMount, onDestroy, tick } from 'svelte';
+    import { browser } from '$app/environment';
+    import { scrollY } from '$lib/scrollStore';  // Import the store
+    
     // Cursor gradient variables
     const cursor = {
         size: 270,                        // Size of the circle in pixels
@@ -10,8 +12,8 @@
         gradientStop: 0.3                 // Where the gradient stops (0-1)
     };
 
-    // Scroll tracking variables
-    let scrollY = 0;
+    // Other variables
+    let currentScrollY = 0;  // Local variable to hold the current scroll position
     let heroElement;
     let heroHeight = 0;
     let windowHeight = 0;
@@ -30,16 +32,27 @@
         endFade: 0.9,                     // When to reach full opacity (0.9 = 90% of viewport height)
     };
 
+    // Initialize as false to prevent flashing
+    let isInitialized = false;
+
+    // Subscribe to the scrollY store
+    const unsubscribe = scrollY.subscribe(value => {
+        currentScrollY = value;
+        if (browser && isInitialized) {
+            updateOverlayOpacity();
+        }
+    });
+
     // Calculate overlay opacity based on scroll
     function updateOverlayOpacity() {
-        if (!heroElement) return;
+        if (!browser || !heroElement || !isInitialized) return;
 
         // Get hero dimensions
         const heroRect = heroElement.getBoundingClientRect();
         heroHeight = heroRect.height;
 
         // Calculate how far we've scrolled relative to viewport height
-        const scrollProgress = (scrollY / windowHeight);
+        const scrollProgress = (currentScrollY / windowHeight);
 
         // Calculate overlay opacity based on scroll progress
         // Clamp between 0 and 1
@@ -49,14 +62,9 @@
         ));
     }
   
-    // Scroll event handler
-    function handleScroll() {
-        scrollY = window.scrollY;
-        updateOverlayOpacity();
-    }
-  
     // Resize event handler
     function handleResize() {
+        if (!browser) return;
         windowHeight = window.innerHeight;
         updateOverlayOpacity();
     }
@@ -69,6 +77,8 @@
     
     // Animation frame for smooth mouse following
     function animateCircle() {
+        if (!browser) return;
+        
         // Calculate the distance between current position and target
         const dx = mouseX - circleX + cursor.size / 5;
         const dy = mouseY - circleY + cursor.size / 5;
@@ -81,7 +91,12 @@
         requestAnimationFrame(animateCircle);
     }
   
-    onMount(() => {
+    onMount(async () => {
+        if (!browser) return;
+        
+        // Wait for DOM to settle
+        await tick();
+        
         // Set initial window height
         windowHeight = window.innerHeight;
         
@@ -92,19 +107,26 @@
         circleY = mouseY;
         
         // Set up event listeners
-        window.addEventListener('scroll', handleScroll);
         window.addEventListener('resize', handleResize);
         window.addEventListener('mousemove', handleMouseMove);
         
         // Start animation loop
         requestAnimationFrame(animateCircle);
         
-        // Initial calculation
-        setTimeout(updateOverlayOpacity, 80);
+        // Set a longer timeout for initial calculation
+        setTimeout(() => {
+            isInitialized = true;
+            updateOverlayOpacity();
+        }, 300); // Longer timeout for first load
     });
   
     onDestroy(() => {
-        window.removeEventListener('scroll', handleScroll);
+        if (!browser) return;
+        
+        // Clean up the store subscription
+        unsubscribe();
+        
+        // Remove other event listeners
         window.removeEventListener('resize', handleResize);
         window.removeEventListener('mousemove', handleMouseMove);
     });
@@ -142,17 +164,18 @@
     bind:this={heroElement}
     style="
         --overlay-base-color: {overlay.color};
-        --overlay-opacity: {overlayOpacity};
+        --overlay-opacity: {isInitialized ? overlayOpacity : 0};
     "
 ></div>
 
+{#if browser}
 <div 
     class="cursor-gradient"
     style="
         --overlay-opacity: {overlayOpacity};
         background: radial-gradient(
             circle at {circleX}px {circleY}px, 
-            {cursor.color} 0%, 
+            {cursor.color} 0%,
             transparent {cursor.gradientStop * 100}%
         );
         filter: blur({cursor.blurAmount}px);
@@ -162,3 +185,4 @@
         margin-top: -{cursor.blurAmount}px;
     "
 ></div>
+{/if}
